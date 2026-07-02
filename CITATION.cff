@@ -1,0 +1,60 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite ConWorldGAN and the original Wor(l)d-GAN work listed in the references."
+title: "ConWorldGAN: Generation of Complex Semantic Structures in 3D Voxel Worlds from a Single Example"
+authors:
+  - family-names: Sharsheyev
+    given-names: Zaiyr
+    affiliation: "Tohoku University"
+version: "0.1.0"
+date-released: 2026-07-02
+license: MIT
+references:
+  - type: software
+    title: "World-GAN"
+    authors:
+      - family-names: Awiszus
+        given-names: Maren
+        affiliation: "Leibniz University Hannover"
+      - family-names: Schubert
+        given-names: Frederik
+        affiliation: "Leibniz University Hannover"
+        orcid: "https://orcid.org/0000-0001-8312-3943"
+      - family-names: Rosenhahn
+        given-names: Bodo
+        affiliation: "Leibniz University Hannover"
+    repository-code: "https://github.com/Mawiszus/World-GAN"
+    license: MIT
+  - type: article
+    title: "Wor(l)d-GAN: Toward Natural-Language-Based PCG in Minecraft"
+    authors:
+      - family-names: Awiszus
+        given-names: Maren
+        affiliation: "Leibniz University Hannover"
+      - family-names: Schubert
+        given-names: Frederik
+        affiliation: "Leibniz University Hannover"
+        orcid: "https://orcid.org/0000-0001-8312-3943"
+      - family-names: Rosenhahn
+        given-names: Bodo
+        affiliation: "Leibniz University Hannover"
+    journal: "IEEE Transactions on Games"
+    year: 2023
+    volume: 15
+    issue: 2
+    start: 182
+    end: 191
+    doi: "10.1109/TG.2022.3153206"
+  - type: conference-paper
+    title: "World-GAN: A Generative Model for Minecraft Worlds"
+    authors:
+      - family-names: Awiszus
+        given-names: Maren
+        affiliation: "Leibniz University Hannover"
+      - family-names: Schubert
+        given-names: Frederik
+        affiliation: "Leibniz University Hannover"
+      - family-names: Rosenhahn
+        given-names: Bodo
+        affiliation: "Leibniz University Hannover"
+    conference: "2021 IEEE Conference on Games"
+    year: 2021
