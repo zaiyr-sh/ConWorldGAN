@@ -1,6 +1,6 @@
 # ConWorldGAN
 
-ConWorldGAN is a research prototype for generating 3D Minecraft voxel worlds from a single example region. It extends the Wor(l)d-GAN / World-GAN single-example generation pipeline with structure-aware downsampling, compact block embeddings, multi-stage training, and semantic supervision to better preserve complex semantic structures such as houses, roofs, walls, doors, and other rare but important village blocks.
+ConWorldGAN is a research prototype for generating 3D Minecraft voxel worlds from a single example region. It extends the Wor(l)d-GAN / World-GAN single-example generation pipeline.
 
 ## Attribution
 
