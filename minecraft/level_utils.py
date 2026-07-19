@@ -200,7 +200,8 @@ def resolve_repr_key(opt, block, b_name, y, z, x):
     if b_name == "minecraft:air":
         return "air"
 
-    clean = block.get_state().get_clean_name()
+    # Keep project-specific name normalization outside the third-party submodule.
+    clean = block.get_state().name.removeprefix("minecraft:")
     return f"{clean}_{(y, z, x)}"
 
 def read_map_from_file(opt: Config):
