@@ -584,7 +584,12 @@ def _load_block_representations(config: Config) -> Optional[dict]:
     return load_pt(filename, representation_dir)
 
 
-def _initialize_config(config: Config, parser: argparse.ArgumentParser) -> Config:
+def _initialize_config(
+    config: Config,
+    parser: argparse.ArgumentParser,
+    *,
+    load_representations: bool,
+) -> Config:
     """Apply profile defaults and initialize values derived from parsed options."""
 
     profile = REGION_PROFILES[config.region]
@@ -625,7 +630,9 @@ def _initialize_config(config: Config, parser: argparse.ArgumentParser) -> Confi
     config.num_scales = len(config.scales)
     config.noise_amp = 1.0
     config.stop_scale = config.num_scales + 1
-    config.block2repr = _load_block_representations(config)
+    config.block2repr = (
+        _load_block_representations(config) if load_representations else None
+    )
     return config
 
 
@@ -633,10 +640,19 @@ def parse_args(
     args: Optional[Sequence[str]] = None,
     *,
     parser: Optional[argparse.ArgumentParser] = None,
+    load_representations: bool = True,
 ) -> Config:
-    """Parse command-line arguments and return an initialized configuration."""
+    """Parse arguments and initialize runtime settings.
+
+    Set ``load_representations`` to false in tools that create representation
+    tables, because those files do not exist yet on their first run.
+    """
 
     parser = parser or build_parser()
     config = parser.parse_args(args=args, namespace=Config())
     config._hyperparameter_keys = list(vars(config))
-    return _initialize_config(config, parser)
+    return _initialize_config(
+        config,
+        parser,
+        load_representations=load_representations,
+    )

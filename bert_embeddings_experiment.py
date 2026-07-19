@@ -74,7 +74,8 @@ if __name__ == '__main__':
     times = {'tokenize': 0, 'to_gpu': 0, 'forward': 0, 'other': 0}
 
     inflect = inflect.engine()
-    opt = parse_args()
+    # This script creates the representation files, so they cannot be loaded yet.
+    opt = parse_args(load_representations=False)
     opt.repr_type = None
     model, tokenizer, unmasker = get_bert_objects(BERT_MODEL_NAME, opt)
     level = read_map(opt)
