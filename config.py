@@ -82,8 +82,6 @@ class Config(argparse.Namespace):
     scales: list[float]
     noise_update: float
     niter: int
-    milestones: int
-    gamma: float
     lr_g: float
     lr_d: float
     beta1: float
@@ -103,10 +101,7 @@ class Config(argparse.Namespace):
     loss: str
     clip_type: str
     neighbors_type: Optional[str]
-    use_semantic_disc: bool
-    semantic_channels: int
     semantic_tau: float
-    lambda_sem_adv: float
     lambda_sem_rec: float
     alpha_decay: float
     alpha_min: float
@@ -139,13 +134,15 @@ class Config(argparse.Namespace):
             raise RuntimeError("The run output directory has not been initialized")
 
         keys = set(self._hyperparameter_keys)
-        keys.update({
-            "coords",
-            "token_list",
-            "repr_channels",
-            "num_scales",
-            "stop_scale",
-        })
+        keys.update(
+            {
+                "coords",
+                "token_list",
+                "repr_channels",
+                "num_scales",
+                "stop_scale",
+            }
+        )
         with open(osp.join(self.out_, "parameters.txt"), "w", encoding="utf-8") as file:
             for key in sorted(keys):
                 file.write(f"{key}\t-\t{getattr(self, key)}\n")
@@ -358,20 +355,10 @@ def build_parser(description: Optional[str] = None) -> argparse.ArgumentParser:
     )
     _add_argument(
         training,
-        "milestones",
-        type=int,
-        default=0,
-        help="learning-rate scheduler milestone",
-    )
-    _add_argument(
-        training, "gamma", type=float, default=0.1, help="learning-rate scheduler gamma"
-    )
-    _add_argument(
-        training,
         "lr-g",
         "--lr_g",
         type=float,
-        default=0.0005,
+        default=0.00005,
         help="generator learning rate",
     )
     _add_argument(
@@ -379,7 +366,7 @@ def build_parser(description: Optional[str] = None) -> argparse.ArgumentParser:
         "lr-d",
         "--lr_d",
         type=float,
-        default=0.0005,
+        default=0.00005,
         help="discriminator learning rate",
     )
     _add_argument(training, "beta1", type=float, default=0.5, help="Adam beta1")
@@ -453,43 +440,41 @@ def build_parser(description: Optional[str] = None) -> argparse.ArgumentParser:
         help="enable debug output",
     )
 
-    semantic = parser.add_argument_group("semantic and layout losses")
+    layout = parser.add_argument_group("semantic reconstruction and layout")
     _add_argument(
-        semantic,
-        "use-semantic-disc",
-        "--use_semantic_disc",
-        action=argparse.BooleanOptionalAction,
-        default=False,
-        help="enable the semantic discriminator",
+        layout,
+        "semantic-tau",
+        "--semantic_tau",
+        type=float,
+        default=1.0,
+        help="temperature used to project block representations to semantic classes",
     )
     _add_argument(
-        semantic, "semantic-channels", "--semantic_channels", type=int, default=6
-    )
-    _add_argument(semantic, "semantic-tau", "--semantic_tau", type=float, default=1.0)
-    _add_argument(
-        semantic, "lambda-sem-adv", "--lambda_sem_adv", type=float, default=0.5
-    )
-    _add_argument(
-        semantic, "lambda-sem-rec", "--lambda_sem_rec", type=float, default=10.0
+        layout,
+        "lambda-sem-rec",
+        "--lambda_sem_rec",
+        type=float,
+        default=10.0,
+        help="semantic reconstruction loss weight",
     )
     _add_argument(
-        semantic,
+        layout,
         "use-layout-disc",
         "--use_layout_disc",
         action=argparse.BooleanOptionalAction,
         default=True,
         help="enable the layout discriminator",
     )
-    _add_argument(semantic, "layout-channels", "--layout_channels", type=int, default=5)
-    _add_argument(semantic, "layout-nfc", "--layout_nfc", type=int, default=32)
+    _add_argument(layout, "layout-channels", "--layout_channels", type=int, default=5)
+    _add_argument(layout, "layout-nfc", "--layout_nfc", type=int, default=32)
     _add_argument(
-        semantic, "lambda-layout-adv", "--lambda_layout_adv", type=float, default=0.2
+        layout, "lambda-layout-adv", "--lambda_layout_adv", type=float, default=0.2
     )
     _add_argument(
-        semantic, "layout-gp-lambda", "--layout_gp_lambda", type=float, default=10.0
+        layout, "layout-gp-lambda", "--layout_gp_lambda", type=float, default=10.0
     )
     _add_argument(
-        semantic, "lambda-repr-adv", "--lambda_repr_adv", type=float, default=0.8
+        layout, "lambda-repr-adv", "--lambda_repr_adv", type=float, default=0.8
     )
 
     return parser

@@ -7,7 +7,7 @@ from mathutils import Vector
 # =========================
 # 1. USER SETTINGS
 # =========================
-file_name="run-20260413_133124-k8t9e6kq_lambda_sem_adv_2_semantic"
+file_name="replace-with-run-directory"
 original_file="reals/real_last_scale.obj"
 generated_file="objects/last/0.obj"
 obj_path = f"/Users/zaiyrsharsheyev/Documents/TU/World-R3GAN/output_test/wandb/{file_name}/files/arbitrary_random_samples_v1.00000_h1.00000_st0/{original_file}"
@@ -161,12 +161,12 @@ scene.render.filepath = output_video
 print("OBJ loaded from:", obj_path)
 print("Video will be saved to:", output_video)
 
-# Белый фон
+# Use a white world background.
 world = bpy.context.scene.world
 world.use_nodes = True
 
 bg = world.node_tree.nodes["Background"]
-bg.inputs[0].default_value = (1, 1, 1, 1)  # белый цвет
+bg.inputs[0].default_value = (1, 1, 1, 1)
 
 # Uncomment this line if you want the script to start rendering immediately
 bpy.ops.render.render(animation=True)

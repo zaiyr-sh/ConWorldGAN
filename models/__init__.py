@@ -7,8 +7,9 @@ from .generator import GrowingGenerator
 from .discriminator import Discriminator
 from .layout_discriminator import LayoutDiscriminator2D
 
+
 def weights_init(m):
-    """ Init weights for Conv and Norm Layers. """
+    """Initialize convolution and normalization layers with GAN defaults."""
     classname = m.__class__.__name__
     if classname.find("Conv2d") != -1:
         m.weight.data.normal_(0.0, 0.02)
@@ -20,15 +21,14 @@ def weights_init(m):
 
 
 def init_models(opt):
-    """ Initialize Generator and Discriminator. """
-    # generator initialization:
+    """Create and initialize a generator-discriminator pair."""
+
     G = GrowingGenerator(opt).to(opt.device)
     G.apply(weights_init)
     if opt.netG != "":
         G.load_state_dict(torch.load(opt.netG, map_location=opt.device))
     print(G)
 
-    # discriminator initialization:
     D = Discriminator(opt).to(opt.device)
     D.apply(weights_init)
     if opt.netD != "":
@@ -37,17 +37,20 @@ def init_models(opt):
 
     return D, G
 
+
 def init_G(opt):
-    """ Initialize Generator and Discriminator. """
-    # generator initialization:
+    """Create a generator and optionally restore its checkpoint."""
+
     G = GrowingGenerator(opt).to(opt.device)
     G.apply(weights_init)
     if opt.netG != "":
         G.load_state_dict(torch.load(opt.netG, map_location=opt.device))
     return G
 
+
 def init_D(opt):
-    # discriminator initialization:
+    """Create a representation discriminator and optionally restore it."""
+
     D = Discriminator(opt).to(opt.device)
     D.apply(weights_init)
     if opt.netD != "":
@@ -55,12 +58,10 @@ def init_D(opt):
     print(D)
     return D
 
-def init_D_sem(opt):
-    D = Discriminator(opt, in_channels=opt.semantic_channels).to(opt.device)
-    D.apply(weights_init)
-    return D
 
 def init_D_layout(opt):
+    """Create the 2D layout discriminator configured for the current run."""
+
     D = LayoutDiscriminator2D(
         in_channels=opt.layout_channels,
         nfc=opt.layout_nfc,
@@ -100,6 +101,8 @@ def calc_gradient_penalty(netD, real_data, fake_data, LAMBDA, device):
 
 
 def save_networks(G, D, z_opt, opt):
+    """Save the networks and reconstruction input for the current scale."""
+
     torch.save(G.state_dict(), "%s/G.pth" % (opt.outf))
     torch.save(D.state_dict(), "%s/D.pth" % (opt.outf))
     torch.save(z_opt, "%s/z_opt.pth" % (opt.outf))
@@ -143,12 +146,12 @@ def reset_grads(model, require_grad):
 
 def load_trained_pyramid(opt):
     dir = opt.out_
-    if(os.path.exists(dir)):
-        reals = torch.load('%s/reals.pth' % dir, map_location=opt.device)
-        Gs = torch.load('%s/generators.pth' % dir, map_location=opt.device)
-        Zs = torch.load('%s/noise_maps.pth' % dir, map_location=opt.device)
-        NoiseAmp = torch.load('%s/noise_amplitudes.pth' % dir, map_location=opt.device)
+    if os.path.exists(dir):
+        reals = torch.load("%s/reals.pth" % dir, map_location=opt.device)
+        Gs = torch.load("%s/generators.pth" % dir, map_location=opt.device)
+        Zs = torch.load("%s/noise_maps.pth" % dir, map_location=opt.device)
+        NoiseAmp = torch.load("%s/noise_amplitudes.pth" % dir, map_location=opt.device)
 
     else:
-        print('no appropriate trained model exists, please train first')
-    return Gs,Zs,reals,NoiseAmp
+        print("no appropriate trained model exists, please train first")
+    return Gs, Zs, reals, NoiseAmp

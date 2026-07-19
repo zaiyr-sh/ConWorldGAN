@@ -13,6 +13,8 @@ from pathlib import Path
 import torch.nn.functional as F
 
 def decode_logits_grid_to_indices(logit_map: torch.Tensor) -> torch.Tensor:
+    """Convert an index or channel-first logit grid to CPU block indices."""
+
     if logit_map.ndim == 3:               # already indices (H,D,W)
         return logit_map.cpu()
     if logit_map.ndim == 5:               # (1,C,H,D,W)
@@ -23,11 +25,8 @@ def decode_logits_grid_to_indices(logit_map: torch.Tensor) -> torch.Tensor:
     raise ValueError(f"Unexpected shape: {tuple(logit_map.shape)}")
 
 def decode_repr_grid_to_indices(repr_map: torch.Tensor, repr_table: torch.Tensor) -> torch.Tensor:
-    """
-    repr_map: (1, C, H, D, W)
-    repr_table: (N, C)
-    returns: (H, D, W) int64
-    """
+    """Decode each voxel to the nearest representation by Euclidean distance."""
+
     voxel_repr = repr_map.squeeze(0).permute(1, 2, 3, 0)[..., None]  # (H, D, W, C, 1)
     table_repr = repr_table.T[None, None, None, ...] # (1, 1, 1, C, N)
     dist = (voxel_repr - table_repr).pow(2).sum(dim=-2) # squared L2 distance over C
@@ -35,10 +34,8 @@ def decode_repr_grid_to_indices(repr_map: torch.Tensor, repr_table: torch.Tensor
 
 @torch.no_grad()
 def decode_repr_grid_to_indices_cos(opt, repr_map: torch.Tensor, tokens) -> torch.Tensor:
-    """
-    repr_map: (1, C, H, D, W)  or (1, C, Y, Z, X)
-    returns: (H, D, W) long tensor on CPU
-    """
+    """Decode a representation grid to CPU token indices by cosine similarity."""
+
     device = repr_map.device
     dtype = repr_map.dtype
 
@@ -60,6 +57,8 @@ def decode_repr_grid_to_indices_cos(opt, repr_map: torch.Tensor, tokens) -> torc
     return idx.to(torch.long).cpu()
 
 def decode_repr_map_to_blocks(opt: Config, repr_map, tokens):
+    """Decode a model output to a discrete ``(Y, Z, X)`` block-index grid."""
+
     with torch.no_grad():
         if is_repr_mode(opt):
             repr_table = torch.stack([opt.block2repr[t] for t in tokens])
@@ -77,6 +76,8 @@ SEM_DECOR = 5
 
 
 def semantic_group_of_token(token: str) -> int:
+    """Map a Minecraft block token to one of the six layout semantic classes."""
+
     t = token.lower()
 
     if t in {"minecraft:air", "minecraft:cave_air"}:
@@ -116,6 +117,8 @@ def semantic_group_of_token(token: str) -> int:
 
 
 def build_semantic_group_matrix(tokens, device):
+    """Build a class-by-token matrix used to aggregate block probabilities."""
+
     mat = torch.zeros((6, len(tokens)), device=device, dtype=torch.float32)
     for i, tok in enumerate(tokens):
         g = semantic_group_of_token(tok)
@@ -124,10 +127,8 @@ def build_semantic_group_matrix(tokens, device):
 
 
 def repr_to_block_probs(opt: Config, repr_map: torch.Tensor, tokens, tau: float = 1.0) -> torch.Tensor:
-    """
-    repr_map: (B, C, H, D, W)
-    returns:  (B, H, D, W, N_blocks)
-    """
+    """Convert model outputs to per-voxel block probabilities."""
+
     if not is_repr_mode(opt):
         # logits mode
         probs = torch.softmax(repr_map, dim=1)
@@ -149,10 +150,8 @@ def repr_to_block_probs(opt: Config, repr_map: torch.Tensor, tokens, tau: float 
 
 
 def repr_to_semantic_map(opt: Config, repr_map: torch.Tensor, tokens, tau: float = 1.0) -> torch.Tensor:
-    """
-    repr_map: (B, C, H, D, W)
-    returns:  (B, K, H, D, W), K = semantic_channels
-    """
+    """Project model outputs to six semantic channels for layout training."""
+
     block_probs = repr_to_block_probs(opt, repr_map, tokens, tau=tau)  # (B, H, D, W, N)
     group_mat = build_semantic_group_matrix(tokens, repr_map.device)    # (K, N)
 
@@ -223,6 +222,8 @@ def build_semantic_label_map_from_discrete_blocks(
     return sem.argmax(dim=1).squeeze(0).cpu()
 
 def read_map(opt: Config):
+    """Load the configured world region and attach its metadata to ``opt``."""
+
     level, uniques, props, neighbor_info = read_map_from_file(opt=opt)
     opt.token_list = uniques
     opt.neighbor_info = neighbor_info
@@ -232,6 +233,8 @@ def read_map(opt: Config):
     return level
 
 def init_map(opt: Config):
+    """Allocate an empty map and token metadata for the configured representation."""
+
     if opt.repr_type in ["bert", "clip"]:
         uniques = [u for u in opt.block2repr.keys()]
         props = [None for _ in range(len(uniques))]
@@ -244,6 +247,8 @@ def init_map(opt: Config):
     return map, uniques, props, neighbor_info
 
 def resolve_repr_key(opt, block, b_name, y, z, x):
+    """Return the representation-table key for a block at a world coordinate."""
+
     if opt.neighbors_type != "local":
         return b_name
 
@@ -254,6 +259,8 @@ def resolve_repr_key(opt, block, b_name, y, z, x):
     return f"{clean}_{(y, z, x)}"
 
 def read_map_from_file(opt: Config):
+    """Read the configured Minecraft region into a model-ready tensor."""
+
     (y0, y1), (z0, z1), (x0, x1) = opt.coords
     repr_mode = is_repr_mode(opt)
 
@@ -365,6 +372,8 @@ def resolve_block_name(opt, token: str) -> str:
     return f"minecraft:{clean.replace(' ', '_')}"
 
 def save_level_to_world(opt: Config, start_coords, blocks):
+    """Write a block-index tensor into the output world at ``start_coords``."""
+
     if opt.props is None:
         props = [{} for _ in range(len(opt.token_list))]
     else:

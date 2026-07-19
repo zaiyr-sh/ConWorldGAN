@@ -132,36 +132,32 @@ def get_neighbor_calculation_sentence_positions(
     5 grass blocks and 1 air block in this village."
     """
 
-    # 1) Описываем центр
-    center_name = block_name  # уже "cobblestone", "oak planks" (clean)
-    # Можно игнорировать is_block_plural, т.к. центр один
+    # The center always refers to one already-cleaned block name.
+    center_name = block_name
     first_sentence = f"The center block is {center_name}."
 
-    # 2) Считаем соседей по типам блоков
+    # Count valid neighbors by their human-readable block name.
     counts = Counter()
     for nb in neighbors:
         nb_block = nb["block_name"]
         if nb_block == out_of_bounds_token or nb_block == "none":
             continue
 
-        # Превращаем 'minecraft:dirt' -> 'dirt'
-        nb_clean = human_name(nb_block)  # у тебя уже есть эта функция выше
+        nb_clean = human_name(nb_block)
         counts[nb_clean] += 1
 
-    # Если нет валидных соседей – просто скажем, что это часть мира
+    # Fall back to world membership when no valid neighbors are available.
     if not counts:
         if is_world_plural:
             return first_sentence + f" It is part of these {world_name}."
         else:
             return first_sentence + f" It is part of this {world_name}."
 
-    # 3) Строим фразы вида "3 dirt blocks", "1 air block"
-    #    сортируем по убыванию количества, потом по имени – чтобы было стабильнее
+    # Sort by count and name to keep generated descriptions deterministic.
     items = sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))
 
     phrases = []
     for nb_name, cnt in items:
-        # "block" / "blocks" через inflect, чтобы было грамотно
         if cnt == 1:
             # "1 dirt block"
             block_word = "block"
@@ -172,7 +168,7 @@ def get_neighbor_calculation_sentence_positions(
 
         phrases.append(f"{cnt} {nb_name} {block_word_pl}")
 
-    # 4) Склеиваем список в "3 dirt blocks, 5 grass blocks and 1 air block"
+    # Join phrases using natural English list punctuation.
     if len(phrases) == 1:
         neighbors_str = phrases[0]
     elif len(phrases) == 2:
@@ -180,7 +176,6 @@ def get_neighbor_calculation_sentence_positions(
     else:
         neighbors_str = ", ".join(phrases[:-1]) + f", and {phrases[-1]}"
 
-    # 5) Хвост про мир
     if is_world_plural:
         world_phrase = f"these {world_name}"
     else:
@@ -303,12 +298,7 @@ def schema_string_with_3_neighbors(center_block: str, world_name: str, neighbors
 from collections import defaultdict, Counter
 
 def group_from_label(pos_label: str) -> str:
-    """
-    Грубое разбиение направлений на 3 группы:
-    - 'above' (все up*)
-    - 'below' (все down*)
-    - 'side'  (остальное: front/back/left/right и т.п.)
-    """
+    """Group a relative position into ``above``, ``below``, or ``side``."""
     if pos_label.startswith("up"):
         return "above"
     if pos_label.startswith("down"):
@@ -320,22 +310,15 @@ def accumulate_neighbor_stats(level: torch.Tensor,
                               coords,
                               token_list,
                               neighbor_info):
-    """
-    Собираем статистику соседей для КАЖДОГО типа блока.
+    """Count neighboring block types by direction for each center block.
 
-    level: (1, C, Y, Z, X) -- one-hot, repr_type=None
-    coords: ((y0,y1),(z0,z1),(x0,x1)) -- как в opt.coords
-    token_list: список имен блоков (C штук)
-    neighbor_info: Dict[(j,k,l)] -> List[{'pos_label','block_name', ...}]
-
-    Возвращает:
-    stats[center_block]['above'][neighbor_block] = count
-    stats[center_block]['below'][neighbor_block] = count
-    stats[center_block]['side'][neighbor_block]  = count
+    ``level`` has shape ``(1, C, Y, Z, X)`` and ``coords`` follows the
+    ``((y0, y1), (z0, z1), (x0, x1))`` convention used by ``Config.coords``.
+    The result is indexed as ``stats[center_block][direction][neighbor]``.
     """
     (y0, y1), (z0, z1), (x0, x1) = coords
 
-    stats = defaultdict(lambda: defaultdict(Counter))  # 3-уровневый словарь
+    stats = defaultdict(lambda: defaultdict(Counter))
 
     # level: (1, C, Y, Z, X)
     _, C, Y, Z, X = level.shape
@@ -348,9 +331,9 @@ def accumulate_neighbor_stats(level: torch.Tensor,
         if not (0 <= iy < Y and 0 <= iz < Z and 0 <= ix < X):
             continue
 
-        # находим тип центрального блока по one-hot
+        # Recover the center token from the one-hot channel dimension.
         center_idx = level[0, :, iy, iz, ix].argmax().item()
-        center_block = token_list[center_idx]  # например 'minecraft:oak_planks'
+        center_block = token_list[center_idx]
 
         for nb in neigh_list:
             nb_block = nb["block_name"]
@@ -370,10 +353,7 @@ def restore_block_name(name: str) -> str:
     return "minecraft:" + name.replace(" ", "_")
 
 def _most_common_non_air(counter):
-    """
-    Возвращает имя блока из counter, который НЕ является air.
-    Если все блоки air или counter пуст, возвращает None.
-    """
+    """Return the most common non-air block, or ``None`` when unavailable."""
     if counter is None:
         return None
 
@@ -389,27 +369,19 @@ def is_house_block(clean_name: str) -> bool:
 def build_context_sentence_for_block(block_name: str,
                                      world_name: str,
                                      stats_for_block: dict) -> str:
-    """
-    block_name: 'minecraft:oak_planks'
-    world_name: 'village' / 'desert' и т.п.
-    stats_for_block: stats[block_name] из accumulate_neighbor_stats
-                     словарь с ключами 'above','below','side'
-    """
+    """Describe a block using its three directional neighbor counters."""
     center_human = clean_block_name(block_name)
 
-    # Базовая часть, описываем центр
     sentence = f"The center block is {center_human}."
 
     if not stats_for_block:
-        # нет статистики – простое предложение
         return sentence + f" It is part of this {world_name}."
 
-    # 1) Собираем общий Counter по всем группам
+    # Combine direction-specific counts before selecting common neighbors.
     total_counter = Counter()
     for group_counter in stats_for_block.values():
         total_counter.update(group_counter)
 
-    # 2) Фильтруем air и пустое
     filtered = []
     for nb_block, cnt in total_counter.most_common():
         if nb_block is None:
@@ -419,14 +391,12 @@ def build_context_sentence_for_block(block_name: str,
             continue
         filtered.append((nb_clean, cnt))
 
-    # Если после фильтрации ничего не осталось
     if not filtered:
         return sentence + f" It is part of this {world_name}."
 
-    # 3) Берём максимум 3 самых частых
     top_neighbors = [name for name, _ in filtered[:3]]
 
-    # 4) Строим строку "dirt", "dirt and ladder", "dirt, ladder, and door"
+    # Format at most three neighbors as a natural-language list.
     if len(top_neighbors) == 1:
         neighbors_str = top_neighbors[0]
     elif len(top_neighbors) == 2:
@@ -439,18 +409,12 @@ def build_context_sentence_for_block(block_name: str,
 
 def build_context_sentence_for_block_with_house(block_name: str,
                                      stats_for_block: dict) -> str:
-    """
-    block_name: 'minecraft:oak_planks'
-    world_name: 'village' / 'desert' и т.п. (можно сейчас не использовать)
-    stats_for_block: stats[block_name] из accumulate_neighbor_stats
-                     словарь с ключами 'above','below','side'
-    """
+    """Describe a block's neighbors and whether it belongs to a house."""
     center_human = clean_block_name(block_name)
 
-    # Базовая часть
     sentence = f"The center block is {center_human}."
 
-    # Если статистики нет, просто добавим house / not house
+    # Without neighbor statistics, return only the house classification.
     if not stats_for_block:
         house_part = (
             " This block is part of a house."
@@ -459,12 +423,10 @@ def build_context_sentence_for_block_with_house(block_name: str,
         )
         return sentence + house_part
 
-    # 1) Общий Counter по всем группам
     total_counter = Counter()
     for group_counter in stats_for_block.values():
         total_counter.update(group_counter)
 
-    # 2) Фильтруем air и пустое
     filtered = []
     for nb_block, cnt in total_counter.most_common():
         if nb_block is None:
@@ -474,7 +436,6 @@ def build_context_sentence_for_block_with_house(block_name: str,
             continue
         filtered.append((nb_clean, cnt))
 
-    # 3) Если после фильтрации ничего не осталось
     if not filtered:
         house_part = (
             " This block is part of a house."
@@ -483,7 +444,6 @@ def build_context_sentence_for_block_with_house(block_name: str,
         )
         return sentence + house_part
 
-    # 4) Берём максимум 3 самых частых соседних блока
     top_neighbors = [name for name, _ in filtered[:3]]
 
     if len(top_neighbors) == 1:
@@ -495,7 +455,6 @@ def build_context_sentence_for_block_with_house(block_name: str,
 
     sentence += f" It is surrounded by {neighbors_str}."
 
-    # 5) Третье предложение про дом
     house_part = (
         " This block is part of a house."
         if is_house_block(center_human)
