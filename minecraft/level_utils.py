@@ -392,7 +392,7 @@ def save_level_to_world(opt: Config, start_coords, blocks):
                         logger.error(f"  error: {e}")
 
 def clear_empty_world(worlds_folder, empty_world_name='Curr_Empty_World'):
-    src = os.path.join(worlds_folder, 'drehmal_3')
+    src = os.path.join(worlds_folder, 'Drehmal v2.1 PRIMORDIAL')
     dst = os.path.join(worlds_folder, empty_world_name)
     shutil.rmtree(dst)
     shutil.copytree(src, dst)

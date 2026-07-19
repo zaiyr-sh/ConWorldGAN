@@ -1,18 +1,18 @@
 import math
 import os
 import subprocess
-from typing import Optional
+from collections.abc import Sequence
 
 import numpy as np
 import torch
 from tqdm import tqdm
 
-from config import Config
+from config import Config, build_parser, parse_args
 from generation.generate_noise import generate_spatial_noise
 from minecraft.level_renderer import render_minecraft
-from minecraft.level_utils import decode_repr_map_to_blocks, decode_repr_grid_to_indices_cos, save_level_to_world, clear_empty_world
-from minecraft.level_utils import read_map as mc_read_level
+from models import init_G
 from utils import interpolate3D
+from minecraft.level_utils import decode_repr_map_to_blocks, save_level_to_world, clear_empty_world, read_map as mc_read_level
 
 def _find_last_depth(out_dir: str) -> int:
     depths = []
@@ -74,7 +74,9 @@ def _sample_noise_list_3d(
                 n = fixed_noise[d].to(device)
                 n = _resize_noise_like(n, target)
             else:
-                n = generate_spatial_noise((1, repr_ch, y, z, x), device=device).detach()
+                n = generate_spatial_noise(
+                    (1, repr_ch, y, z, x), device=device
+                ).detach()
         else:
             target = (y + extra, z + extra, x + extra)
             if fixed_noise is not None and d < gen_start_scale:
@@ -87,13 +89,16 @@ def _sample_noise_list_3d(
 
     return noise
 
-from models import init_G  # добавь импорт
 
 def load_trained_pyramid_cons(opt):
     last_depth = _find_last_depth(opt.out_)
     reals = torch.load(os.path.join(opt.out_, "reals.pth"), map_location=opt.device)
-    fixed_noise = torch.load(os.path.join(opt.out_, "fixed_noise.pth"), map_location=opt.device)
-    noise_amp = torch.load(os.path.join(opt.out_, "noise_amp.pth"), map_location=opt.device)
+    fixed_noise = torch.load(
+        os.path.join(opt.out_, "fixed_noise.pth"), map_location=opt.device
+    )
+    noise_amp = torch.load(
+        os.path.join(opt.out_, "noise_amp.pth"), map_location=opt.device
+    )
 
     tl_path = os.path.join(opt.out_, "token_list.pth")
     if os.path.exists(tl_path):
@@ -110,22 +115,69 @@ def load_trained_pyramid_cons(opt):
     return netG, fixed_noise, reals, noise_amp, last_depth
 
 
-class GenerateSamplesConfig(Config):
-    scale_v: float = 1.0    # vertical scale factor
-    scale_h: float = 1.0  # horizontal scale factor
-    scale_d: float = 1.0  # horizontal scale factor
-    gen_start_scale: int = 0  # scale to start generating in
-    num_samples: int = 25 # number of samples to be generated
-    save_tensors: bool = False  # save pytorch .pt tensors?
-    not_cuda: bool = True  # disables cuda
-    generators_dir: Optional[str] = None
+def parse_generate_samples_args(args: Sequence[str] = None) -> Config:
+    """Parse the base settings plus options used only for sample generation."""
 
-    def process_args(self):
-        super().process_args()
-        self.seed_road: Optional[torch.Tensor] = None
-        self.out_: Optional[str] = "output_test/wandb/run-20260506_144855-j96a8j8z/files"
-        if not self.out_:
-            raise Exception('--out_ is required')
+    parser = build_parser("Generate samples from a trained ConWorldGAN run.")
+    generation = parser.add_argument_group("sample generation")
+    generation.add_argument(
+        "--trained-run-dir",
+        "--out_",
+        dest="trained_run_dir",
+        required=True,
+        help="directory containing reals.pth, fixed_noise.pth, and scale checkpoints",
+    )
+    generation.add_argument(
+        "--scale-v",
+        "--scale_v",
+        dest="scale_v",
+        type=float,
+        default=1.0,
+        help="X-axis scale factor",
+    )
+    generation.add_argument(
+        "--scale-h",
+        "--scale_h",
+        dest="scale_h",
+        type=float,
+        default=1.0,
+        help="Y-axis scale factor",
+    )
+    generation.add_argument(
+        "--scale-d",
+        "--scale_d",
+        dest="scale_d",
+        type=float,
+        default=1.0,
+        help="Z-axis scale factor",
+    )
+    generation.add_argument(
+        "--gen-start-scale",
+        "--gen_start_scale",
+        dest="gen_start_scale",
+        type=int,
+        default=0,
+        help="first pyramid scale that receives new noise",
+    )
+    generation.add_argument(
+        "--num-samples",
+        "--num_samples",
+        dest="num_samples",
+        type=int,
+        default=25,
+        help="number of samples to generate",
+    )
+    generation.add_argument(
+        "--save-tensors",
+        "--save_tensors",
+        dest="save_tensors",
+        action="store_true",
+        help="save generated representation tensors",
+    )
+
+    config = parse_args(args, parser=parser)
+    config.out_ = config.trained_run_dir
+    return config
 
 
 def generate_samples_cons(
@@ -133,7 +185,7 @@ def generate_samples_cons(
     fixed_noise,
     reals,
     noise_amp,
-    opt: GenerateSamplesConfig,
+    opt: Config,
     scale_v=1.0,
     scale_h=1.0,
     scale_d=1.0,
@@ -143,17 +195,24 @@ def generate_samples_cons(
     save_tensors=False,
     save_dir="random_samples",
 ):
+
     dir2save = os.path.join(opt.out_, save_dir)
     os.makedirs(dir2save, exist_ok=True)
     if save_tensors:
         os.makedirs(os.path.join(dir2save, "torch"), exist_ok=True)
     os.makedirs(os.path.join(dir2save, "torch_blockdata"), exist_ok=True)
 
-    gen_shapes = _build_gen_shapes_from_reals(reals, scale_v=scale_v, scale_h=scale_h, scale_d=scale_d)
+    gen_shapes = _build_gen_shapes_from_reals(
+        reals, scale_v=scale_v, scale_h=scale_h, scale_d=scale_d
+    )
 
     # token list
     if opt.repr_type is not None:
-        token_list = list(opt.block2repr.keys()) if hasattr(opt, "block2repr") and opt.block2repr is not None else opt.token_list
+        token_list = (
+            list(opt.block2repr.keys())
+            if hasattr(opt, "block2repr") and opt.block2repr is not None
+            else opt.token_list
+        )
     else:
         token_list = opt.token_list
 
@@ -200,7 +259,12 @@ def generate_samples_cons(
             obj_pth = os.path.join(dir2save, "objects", "last")
             os.makedirs(obj_pth, exist_ok=True)
             try:
-                subprocess.call(["/Applications/Wine Stable.app/Contents/Resources/wine/bin/wine", "--version"])
+                subprocess.call(
+                    [
+                        "/Applications/Wine Stable.app/Contents/Resources/wine/bin/wine",
+                        "--version",
+                    ]
+                )
 
                 len_n = math.ceil(math.sqrt(num_samples))
                 xg, zg = np.unravel_index(n, [len_n, len_n])
@@ -222,16 +286,17 @@ def generate_samples_cons(
                 print("Render failed:", repr(e))
 
         if save_tensors:
-            torch.save(sample.detach().cpu(), os.path.join(dir2save, "torch", f"{n}.pt"))
+            torch.save(
+                sample.detach().cpu(), os.path.join(dir2save, "torch", f"{n}.pt")
+            )
 
     return
 
 
-
-if __name__ == '__main__':
+if __name__ == "__main__":
     # NOTICE: The "output" dir is where the generator is located as with main.py, even though it is the "input" here
 
-    opt = GenerateSamplesConfig().parse_args()
+    opt = parse_generate_samples_args()
 
     clear_empty_world(opt.output_dir, opt.output_name)
 
@@ -247,7 +312,11 @@ if __name__ == '__main__':
 
     # Directory name
     s_dir_name = "%s_random_samples_v%.5f_h%.5f_st%d" % (
-        prefix, opt.scale_v, opt.scale_h, opt.gen_start_scale)
+        prefix,
+        opt.scale_v,
+        opt.scale_h,
+        opt.gen_start_scale,
+    )
 
     generate_samples_cons(
         netG=netG,

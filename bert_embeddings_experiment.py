@@ -10,7 +10,7 @@ from torch import Tensor
 from tqdm import tqdm
 from sklearn.decomposition import PCA
 
-from config import Config
+from config import Config, parse_args
 from constants import *
 from minecraft.block_grammar import clean_block_name, get_sentence, \
     get_neighbor_calculation_sentence_positions, accumulate_neighbor_stats, build_context_sentence_for_block, \
@@ -64,7 +64,7 @@ if __name__ == '__main__':
     times = {'tokenize': 0, 'to_gpu': 0, 'forward': 0, 'other': 0}
 
     inflect = inflect.engine()
-    opt = Config().parse_args()
+    opt = parse_args()
     opt.repr_type = None
     model, tokenizer, unmasker = get_bert_objects(BERT_MODEL_NAME, opt)
     level = read_map(opt)
@@ -93,7 +93,6 @@ if __name__ == '__main__':
         print(f"[region] {region_name}")
         opt.input_area_name = region_name
         opt.sub_coords = SUB_COORDS[region_name]
-        opt.process_args()
 
         print(opt)
         token_list = opt.token_list

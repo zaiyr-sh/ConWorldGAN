@@ -1,15 +1,17 @@
-from loguru import logger
 import time
-from config import Config
+from pathlib import Path
+
+from loguru import logger
+
+from config import parse_args
+from utils import init_logger, init_wandb, zip
 from generation.generate_samples import generate_samples_cons
 from minecraft.level_utils import read_map
 from training.train import train
-from utils import init_logger, init_wandb, zip
-from pathlib import Path
 
 def main():
     init_logger()
-    opt = Config().parse_args()
+    opt = parse_args()
     init_wandb(opt)
 
     real = read_map(opt).to(opt.device)
@@ -31,7 +33,8 @@ def main():
             noise_amp=noise_amplitudes,
             opt=opt,
         )
-    except Exception as e: logger.error(f"Failed to generate samples: {e}")
+    except Exception as e:
+        logger.error(f"Failed to generate samples: {e}")
 
     # try:
     #     make_block_histogram(os.path.join(opt.out_, "random_samples/torch_blockdata"), True)
