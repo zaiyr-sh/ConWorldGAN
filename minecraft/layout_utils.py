@@ -1,7 +1,6 @@
 import torch
 
 
-SEM_AIR = 0
 SEM_GROUND = 1
 SEM_LIQUID = 2
 SEM_FOLIAGE = 3

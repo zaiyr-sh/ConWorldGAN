@@ -1,9 +1,10 @@
+import os
 import pprint
 from timeit import default_timer
+from typing import List
 
 import inflect
 import numpy as np
-import pymde
 import torch
 import transformers
 from torch import Tensor
@@ -11,12 +12,21 @@ from tqdm import tqdm
 from sklearn.decomposition import PCA
 
 from config import Config, parse_args
-from constants import *
-from minecraft.block_grammar import clean_block_name, get_sentence, \
-    get_neighbor_calculation_sentence_positions, accumulate_neighbor_stats, build_context_sentence_for_block, \
-    build_context_sentence_for_block_with_house
+from constants import (
+    BERT_MODEL_NAME,
+    REGION_NAMES,
+    SUB_COORDS,
+    WORLD_LABELS_PLURAL,
+)
+from minecraft.block_grammar import (
+    accumulate_neighbor_stats,
+    build_context_sentence_for_block,
+    clean_block_name,
+    get_neighbor_calculation_sentence_positions,
+    get_sentence,
+)
 from minecraft.level_utils import read_map
-from utils import save_pkl, get_subdir_path
+from utils import save_pkl
 
 
 # ---------- Utilities ----------
@@ -77,7 +87,6 @@ if __name__ == '__main__':
             neighbor_info=opt.neighbor_info,
         )
 
-    use_amp = opt.device.type == "cuda"
     if opt.device.type == "cuda":
         # enables TF32 on Ampere+ and better matmul perf
         try:
@@ -88,7 +97,7 @@ if __name__ == '__main__':
             pass
 
     for idx, region_name in enumerate(REGION_NAMES):
-        prepath = get_subdir_path(f"input/minecraft/{region_name}/")
+        prepath = os.path.join(opt.representation_dir, region_name)
         os.makedirs(prepath, exist_ok=True)
         print(f"[region] {region_name}")
         opt.input_area_name = region_name
@@ -96,8 +105,6 @@ if __name__ == '__main__':
 
         print(opt)
         token_list = opt.token_list
-        token_list_vectors = token_list
-
         token_names: List[str] = []
         clean_names: List[str] = []
 
@@ -117,32 +124,31 @@ if __name__ == '__main__':
                 clean_names.append(block_name)
                 print(f"Sentence: '{token_names[-1]}'")
         elif opt.neighbors_type == "local":
-            for coord, value in tqdm(opt.neighbor_info.items()):
+            for value in tqdm(opt.neighbor_info.values()):
                 clean_token = value[0]["block_name"].replace("minecraft:", "").replace("_", " ")
 
                 if clean_token == "air":
                     if any(s.startswith("air") for s in clean_names):
                         continue
-                    else:
-                        # token_names.append('CENTER=air; WORLD=village')
-                        token_names.append(f"This air is part of this village.")
-                        clean_names.append("air")
-                        continue
+                    token_names.append("This air is part of this village.")
+                    clean_names.append("air")
+                    continue
 
-                if isinstance(inflect.singular_noun(clean_token), bool) or (clean_token.find("grass") >= 0):
-                    is_plural = False
-                else:
-                    is_plural = True
-
-                token_names.append(get_neighbor_calculation_sentence_positions(clean_token, is_plural, WORLD_LABELS_PLURAL[idx][0],
-                                                                   WORLD_LABELS_PLURAL[idx][1], value, unmasker))
+                token_names.append(
+                    get_neighbor_calculation_sentence_positions(
+                        clean_token,
+                        WORLD_LABELS_PLURAL[idx][0],
+                        WORLD_LABELS_PLURAL[idx][1],
+                        value,
+                    )
+                )
                 j = value[0]["y"]
                 k = value[0]["z"]
                 l = value[0]["x"]
                 clean_token = clean_token.replace(" ", "_")
                 clean_names.append(f"{clean_token}_{(j, k, l)}")
         else:
-            for token, token_vector in zip(token_list, token_list_vectors):
+            for token in token_list:
                 clean_token = token.replace("minecraft:", "").replace("_", " ")
                 if isinstance(inflect.singular_noun(clean_token), bool) or (clean_token.find("grass") >= 0):
                     is_plural = False
@@ -202,13 +208,10 @@ if __name__ == '__main__':
             save_pkl(natural_token_dict,f"natural_representations_neighbors{dim}", prepath)
 
 
-        # natural_tokens = torch.stack(list(torch.load(f"/Users/zaiyrsharsheyev/Documents/TU/World-R3GAN/input/minecraft/vanilla_village/natural_representations_neighbors_{opt.repr_dim}.pt").values()))
         natural_tokens = torch.stack(list(natural_token_dict.values()))
         natural_tokens = natural_tokens.to(device=opt.device, non_blocking=True)
 
         embedding = compress_dim(opt, natural_tokens)
-
-        # embedding = pymde.preserve_distances(natural_tokens, embedding_dim=opt.repr_dim, verbose=True).embed()
 
         natural_token_dict_small_no_norm = {}
         natural_token_dict_small = {}

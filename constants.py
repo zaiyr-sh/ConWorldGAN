@@ -1,7 +1,55 @@
 import os
 from typing import Dict, List, Tuple
 
-WANDB_ENTITY = "sharsheyev-zaiyr-q7-tohoku-university"
+
+PROJECT_PATH = os.path.abspath(os.path.dirname(__file__))
+
+
+def _env_or_default(name: str, default: str) -> str:
+    """Return a non-empty environment value or a portable project default."""
+
+    return os.getenv(name) or default
+
+
+# Developer-specific paths and W&B ownership can be set in the environment.
+# W&B reads WANDB_API_KEY itself; credentials must never be added here.
+WANDB_ENTITY = os.getenv("WANDB_ENTITY") or None
+WANDB_PROJECT = _env_or_default("WANDB_PROJECT", "conworldgan")
+DEFAULT_INPUT_DIR = _env_or_default(
+    "CONWORLDGAN_INPUT_WORLDS_DIR", os.path.join(PROJECT_PATH, "minecraft_worlds")
+)
+DEFAULT_OUTPUT_DIR = _env_or_default(
+    "CONWORLDGAN_OUTPUT_WORLDS_DIR", os.path.join(PROJECT_PATH, "minecraft_worlds")
+)
+DEFAULT_REPRESENTATION_DIR = _env_or_default(
+    "CONWORLDGAN_REPR_DIR", os.path.join(PROJECT_PATH, "input", "minecraft")
+)
+DEFAULT_RUN_DIR = _env_or_default(
+    "CONWORLDGAN_RUNS_DIR", os.path.join(PROJECT_PATH, "output")
+)
+DEFAULT_WINE_EXECUTABLE = _env_or_default(
+    "CONWORLDGAN_WINE_BIN",
+    "wine",
+)
+DEFAULT_MINEWAYS_EXECUTABLE = _env_or_default(
+    "CONWORLDGAN_MINEWAYS_BIN",
+    os.path.join(
+        PROJECT_PATH,
+        "minecraft",
+        "mineways",
+        "Mineways.app",
+        "Contents",
+        "Resources",
+        "drive_c",
+        "Program Files",
+        "mineways",
+        "Mineways.exe",
+    ),
+)
+DEFAULT_MINEWAYS_SCRIPT_DIR = _env_or_default(
+    "CONWORLDGAN_MINEWAYS_SCRIPT_DIR",
+    os.path.join(PROJECT_PATH, "minecraft", "mineways"),
+)
 
 SUB_COORDS: Dict[str, List[float]] = dict(
     ruins=[0.0, 1.0, 0.0, 1.0, 0.0, 1.0],
@@ -20,9 +68,6 @@ REGION_NAMES: List[str] = [
 WORLD_LABELS_PLURAL: List[Tuple[str, bool]] = [
     ("village", False),
 ]
-
-# Paths
-PROJECT_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__)))
 
 # BERT / NLP
 BERT_MODEL_NAME = "bert-base-uncased"
@@ -62,45 +107,5 @@ RELATIVE_OFFSETS_26 = [
     (-1, -1,  0, "down-back"),
     (-1, -1, -1, "down-back-left"),
 ]
-
-ORDER = [
-    "up-front-right","up-front","up-front-left","up-right","up","up-left",
-    "up-back-right","up-back","up-back-left",
-    "front-right","front","front-left","right","left",
-    "back-right","back","back-left",
-    "down-front-right","down-front","down-front-left",
-    "down-right","down","down-left",
-    "down-back-right","down-back","down-back-left",
-]
-
-SHORT = {
-    "up-front-right":"UFR", "up-front":"UF", "up-front-left":"UFL",
-    "up-right":"UR", "up":"U", "up-left":"UL",
-    "up-back-right":"UBR", "up-back":"UB", "up-back-left":"UBL",
-    "front-right":"FR", "front":"F", "front-left":"FL",
-    "right":"R", "left":"L", "back-right":"BR", "back":"B", "back-left":"BL",
-    "down-front-right":"DFR", "down-front":"DFL", "down-front-left":"DFL",
-    "down-right":"DR", "down":"D", "down-left":"DL",
-    "down-back-right":"DBR", "down-back":"DB", "down-back-left":"DBL",
-}
-
-HOUSE_BLOCKS = {
-    "chest",
-    "white bed",
-    "yellow bed",
-    "oak planks",
-    "oak stairs",
-    "cobblestone",
-    "cobblestone stairs",
-    "glass pane",
-    "oak door",
-    "oak pressure plate",
-    "green carpet",
-    "wall torch",
-    "ladder",
-    "stripped oak log",
-    "stripped oak wood",
-    "oak log",
-}
 
 REPR_TYPES = {"bert", "clip"}

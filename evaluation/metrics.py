@@ -367,68 +367,6 @@ def decode_tensor_to_indices(x: torch.Tensor, tokens: Sequence[str], block2repr:
 
 
 # ---------------------------------------------------------------------
-# Semantic labels, standalone version for original World-GAN
-# ---------------------------------------------------------------------
-
-
-SEM_AIR = 0
-SEM_GROUND = 1
-SEM_LIQUID = 2
-SEM_STRUCTURE = 3
-SEM_FOLIAGE = 4
-SEM_DECOR = 5
-
-SEM_NAMES = {
-    SEM_AIR: "AIR",
-    SEM_GROUND: "GROUND",
-    SEM_LIQUID: "LIQUID",
-    SEM_STRUCTURE: "STRUCTURE",
-    SEM_FOLIAGE: "FOLIAGE",
-    SEM_DECOR: "DECOR",
-}
-
-GROUND_WORDS = [
-    "grass_block", "dirt", "grass_path", "path", "farmland", "stone", "andesite",
-    "diorite", "granite", "gravel", "sand", "clay", "ore", "netherrack", "podzol",
-    "coarse_dirt", "mycelium", "snow_block", "ice",
-]
-LIQUID_WORDS = ["water", "lava"]
-FOLIAGE_WORDS = [
-    "leaves", "vine", "grass", "fern", "seagrass", "lily_pad", "poppy", "dandelion",
-    "cornflower", "daisy", "orchid", "bluet", "bush", "wheat", "crop", "sapling",
-    "cactus", "bamboo", "kelp", "mushroom",
-]
-STRUCTURE_WORDS = [
-    "planks", "log", "wood", "stairs", "slab", "cobblestone", "wall", "terracotta",
-    "bricks", "brick", "door", "trapdoor", "fence", "gate", "glass", "pane",
-    "bars", "ladder", "hay_block",
-]
-DECOR_WORDS = [
-    "torch", "bed", "chest", "furnace", "smoker", "blast_furnace", "brewing_stand",
-    "composter", "bell", "grindstone", "carpet", "pressure_plate", "button", "lever",
-    "lantern", "flower_pot",
-]
-
-
-def token_to_semantic_id(token: str) -> int:
-    t = token.replace("minecraft:", "").lower()
-    if t in {"air", "cave_air", "void_air"}:
-        return SEM_AIR
-    if any(w in t for w in LIQUID_WORDS):
-        return SEM_LIQUID
-    # Order matters: grass_block/path should be ground, tall_grass should be foliage.
-    if any(w == t or w in t for w in GROUND_WORDS):
-        if t not in {"grass", "tall_grass", "seagrass", "tall_seagrass"}:
-            return SEM_GROUND
-    if any(w in t for w in DECOR_WORDS):
-        return SEM_DECOR
-    if any(w in t for w in STRUCTURE_WORDS):
-        return SEM_STRUCTURE
-    if any(w in t for w in FOLIAGE_WORDS):
-        return SEM_FOLIAGE
-    return SEM_DECOR
-
-# ---------------------------------------------------------------------
 # Metric 1: block histogram
 # ---------------------------------------------------------------------
 
@@ -595,14 +533,6 @@ def is_structural_shell_token(token: str) -> bool:
     return token_in_set(token, STRUCTURAL_SHELL_TOKENS)
 
 
-# Keep these aliases only if some old code still calls them.
-def is_wall_token(token: str) -> bool:
-    return is_structural_shell_token(token)
-
-
-def is_roof_token(token: str) -> bool:
-    return is_structural_shell_token(token)
-
 def is_window_token(token: str) -> bool:
     return token_in_set(token, WINDOW_TOKENS)
 
@@ -616,9 +546,6 @@ def is_ground_support_token(token: str) -> bool:
 
 def clean_token_name(token: str) -> str:
     return token.replace("minecraft:", "").lower()
-
-def house_token_flags(tokens: Sequence[str]) -> np.ndarray:
-    return np.array([is_house_token(t) for t in tokens], dtype=bool)
 
 def token_set_mask_from_grid(
     index_grid: torch.Tensor,
@@ -973,11 +900,6 @@ def house_component_coherence_summary(
 # Metric 4.6: House Completeness
 # ---------------------------------------------------------------------
 
-def token_matches_any(token: str, keywords: Sequence[str]) -> bool:
-    t = clean_token_name(token)
-    return any(k in t for k in keywords)
-
-
 def is_air_token(token: str) -> bool:
     return clean_token_name(token) in {"air", "cave_air", "void_air"}
 
@@ -1018,15 +940,6 @@ def door_mask_from_grid(index_grid: torch.Tensor, tokens: Sequence[str]) -> np.n
 
 def ground_support_mask_from_grid(index_grid: torch.Tensor, tokens: Sequence[str]) -> np.ndarray:
     return mask_from_token_predicate(index_grid, tokens, is_ground_support_token)
-
-
-def _component_bbox(comp_grid: np.ndarray, comp_id: int):
-    pos = np.argwhere(comp_grid == comp_id)
-    if pos.size == 0:
-        return None
-    y0, z0, x0 = pos.min(axis=0)
-    y1, z1, x1 = pos.max(axis=0) + 1
-    return int(y0), int(y1), int(z0), int(z1), int(x0), int(x1)
 
 
 def _has_adjacent(mask: np.ndarray, y: int, z: int, x: int) -> bool:
@@ -1076,32 +989,6 @@ def _is_enclosed_air_voxel(house_mask: np.ndarray, y: int, z: int, x: int, max_s
         and _ray_hits(house_mask, y, z, x, dz=1, dx=0, max_steps=max_steps)
     )
     return bool(hit_x and hit_z)
-
-
-def _footprint(mask_3d: np.ndarray) -> np.ndarray:
-    """
-    Converts a 3D mask [Y, Z, X] to a top-down footprint [Z, X].
-    """
-    return mask_3d.any(axis=0)
-
-
-def _perimeter_mask_2d(footprint: np.ndarray) -> np.ndarray:
-    """
-    Returns perimeter cells of a 2D footprint using 4-neighborhood.
-    """
-    if footprint.sum() == 0:
-        return np.zeros_like(footprint, dtype=bool)
-
-    padded = np.pad(footprint.astype(bool), 1, constant_values=False)
-    center = padded[1:-1, 1:-1]
-
-    up = padded[:-2, 1:-1]
-    down = padded[2:, 1:-1]
-    left = padded[1:-1, :-2]
-    right = padded[1:-1, 2:]
-
-    has_outside_neighbor = ~(up & down & left & right)
-    return center & has_outside_neighbor
 
 
 def _shell_consistency_score(component_mask: np.ndarray, shell_mask: np.ndarray) -> Tuple[float, int]:
@@ -1273,7 +1160,7 @@ def house_completeness_component_stats(
     )
 
     structure = ndimage.generate_binary_structure(rank=3, connectivity=1)
-    comp_grid, num_components = ndimage.label(house_mask, structure=structure)
+    comp_grid, _ = ndimage.label(house_mask, structure=structure)
     sizes = np.bincount(comp_grid.reshape(-1))[1:].astype(np.int64)
 
     rows = []
@@ -1578,8 +1465,6 @@ def visualize_house_components_pyvista(
     tokens: Sequence[str],
     out_path: Path,
     title: str = "House-like blocks",
-    min_house_component_size: int = 20,
-    small_house_component_size: int = 5,
     max_points: int = 30000,
     window_size: tuple[int, int] = (1400, 1000),
     make_gif: bool = False,
@@ -1639,7 +1524,7 @@ def interior_air_mask_from_grid(
     air_mask = air_mask_from_grid(index_grid, tokens)
 
     structure = ndimage.generate_binary_structure(rank=3, connectivity=1)
-    comp_grid, num_components = ndimage.label(house_mask, structure=structure)
+    comp_grid, _ = ndimage.label(house_mask, structure=structure)
 
     sizes = np.bincount(comp_grid.reshape(-1))[1:].astype(np.int64)
     interior_mask = np.zeros_like(house_mask, dtype=bool)
@@ -2058,7 +1943,12 @@ def prepare_data(args):
 
 
 def run_diagnostics(args):
-    out_dir = Path(args.out_dir).expanduser().resolve()
+    output_source = args.out_dir or args.samples_dir or args.run_dir
+    if output_source is None:
+        raise ValueError("provide --out_dir, --samples_dir, or --run_dir")
+    out_dir = Path(output_source).expanduser().resolve()
+    if args.out_dir is None:
+        out_dir /= "diagnostics_worldgan"
     ensure_dir(out_dir)
 
     real_by_scale, fake_by_scale, tokens, extra = prepare_data(args)
@@ -2228,8 +2118,6 @@ def run_diagnostics(args):
                 tokens,
                 debug_dir / f"real_house_components_pyvista.{ext}",
                 title=f"Real scale {scale_id}: house components",
-                min_house_component_size=args.min_house_component_size,
-                small_house_component_size=args.small_house_component_size,
                 max_points=args.debug_max_points,
                 make_gif=args.save_debug_gif,
                 n_frames=args.debug_gif_frames,
@@ -2253,8 +2141,6 @@ def run_diagnostics(args):
                 tokens,
                 debug_dir / f"generated_{debug_sample_id}_house_components_pyvista.{ext}",
                 title=f"Generated {debug_sample_id} scale {scale_id}: house components",
-                min_house_component_size=args.min_house_component_size,
-                small_house_component_size=args.small_house_component_size,
                 max_points=args.debug_max_points,
                 make_gif=args.save_debug_gif,
                 n_frames=args.debug_gif_frames,
@@ -2315,8 +2201,12 @@ class FlexibleBoolAction(argparse.Action):
 def parse_args():
     p = argparse.ArgumentParser()
     p.add_argument("--run_dir", default=None, help="Old World-GAN training run folder with generators.pth/reals.pth")
-    p.add_argument("--samples_dir", default="output_test/wandb/run-20260512_165346-5mc2kbfy-original_no_norm_village3/files/arbitrary_random_samples_v1.00000_h1.00000_st0", help="Existing samples folder with real_bdata.pt and torch_blockdata/*.pt")
-    p.add_argument("--out_dir", default="output_test/wandb/run-20260512_165346-5mc2kbfy-original_no_norm_village3/files/diagnostics_worldgan", help="Where to save CSV diagnostics")
+    p.add_argument("--samples_dir", default=None, help="Existing samples folder with real_bdata.pt and torch_blockdata/*.pt")
+    p.add_argument(
+        "--out_dir",
+        default=None,
+        help="Where to save diagnostics; defaults below samples_dir or run_dir",
+    )
     p.add_argument("--device", default="cuda:0" if torch.cuda.is_available() else "cpu")
 
     p.add_argument("--generate_per_scale", default=False, action=FlexibleBoolAction,

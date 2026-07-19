@@ -6,10 +6,6 @@ from loguru import logger
 from PyAnvilEditor.pyanvil import World, BlockState
 from config import Config
 from utils import collect_neighbors_for_voxel, make_repr_tensor, make_index_tensor, is_repr_mode, to_one_hot
-from torchvision.utils import make_grid
-from torchvision.transforms.functional import to_pil_image
-import math
-from pathlib import Path
 import torch.nn.functional as F
 
 def decode_logits_grid_to_indices(logit_map: torch.Tensor) -> torch.Tensor:
@@ -31,30 +27,6 @@ def decode_repr_grid_to_indices(repr_map: torch.Tensor, repr_table: torch.Tensor
     table_repr = repr_table.T[None, None, None, ...] # (1, 1, 1, C, N)
     dist = (voxel_repr - table_repr).pow(2).sum(dim=-2) # squared L2 distance over C
     return dist.argmin(dim=-1).cpu()  # nearest token
-
-@torch.no_grad()
-def decode_repr_grid_to_indices_cos(opt, repr_map: torch.Tensor, tokens) -> torch.Tensor:
-    """Decode a representation grid to CPU token indices by cosine similarity."""
-
-    device = repr_map.device
-    dtype = repr_map.dtype
-
-    # (N, C)
-    repr_table = torch.stack([opt.block2repr[t] for t in tokens]).to(device=device, dtype=dtype)
-
-    # (H, D, W, C)
-    x = repr_map.squeeze(0).permute(1, 2, 3, 0).contiguous()
-
-    # L2-normalize (cosine)
-    x = F.normalize(x, dim=-1, eps=1e-8)
-    t = F.normalize(repr_table, dim=-1, eps=1e-8)
-
-    # cosine sim: (H, D, W, N)
-    sim = torch.einsum("hdwc,nc->hdwn", x, t)
-
-    # (H, D, W)
-    idx = sim.argmax(dim=-1)
-    return idx.to(torch.long).cpu()
 
 def decode_repr_map_to_blocks(opt: Config, repr_map, tokens):
     """Decode a model output to a discrete ``(Y, Z, X)`` block-index grid."""
@@ -194,33 +166,6 @@ def build_semantic_map_from_discrete_blocks(
     return sem.contiguous()
 
 
-def build_semantic_label_map_from_discrete_blocks(
-    index_map: torch.Tensor,
-    tokens,
-    device=None,
-    context_kernel_size: int = 3,
-) -> torch.Tensor:
-    """
-    Convert discrete block indices to hard semantic labels.
-
-    index_map: (H, D, W)
-    returns: (H, D, W), labels in:
-        0 = AIR
-        1 = GROUND
-        2 = LIQUID
-        3 = FOLIAGE
-        4 = STRUCTURE
-        5 = DECOR
-    """
-    sem = build_semantic_map_from_discrete_blocks(
-        index_map=index_map,
-        tokens=tokens,
-        device=device,
-        context_kernel_size=context_kernel_size,
-    )
-
-    return sem.argmax(dim=1).squeeze(0).cpu()
-
 def read_map(opt: Config):
     """Load the configured world region and attach its metadata to ``opt``."""
 
@@ -266,29 +211,27 @@ def read_map_from_file(opt: Config):
 
     map, uniques, props, neighbor_info = init_map(opt=opt)
 
-    with open("blocks.txt", "w", encoding="utf-8") as f:
-        with World(opt.input_name, opt.input_dir, debug=opt.debug) as wrld:
-            for y in range(y0, y1):
-                for z in range(z0, z1):
-                    for x in range(x0, x1):
-                        block = wrld.get_block((y, z, x))
-                        b_name = block.get_state().name
+    with World(opt.input_name, opt.input_dir, debug=opt.debug) as wrld:
+        for y in range(y0, y1):
+            for z in range(z0, z1):
+                for x in range(x0, x1):
+                    block = wrld.get_block((y, z, x))
+                    b_name = block.get_state().name
+                    if opt.neighbors_type is not None:
                         neighbor_info[(y, z, x)] = collect_neighbors_for_voxel(wrld, (y, z, x), opt.coords)
 
-                        iy, iz, ix = y - y0, z - z0, x - x0
+                    iy, iz, ix = y - y0, z - z0, x - x0
 
-                        if repr_mode:
-                            repr_key = resolve_repr_key(opt, block, b_name, y, z, x)
-                            f.write(f"({y}, {z}, {x}): {repr_key}\n")
-                            map[0, :, iy, iz, ix] = opt.block2repr[repr_key]
-                            if props[uniques.index(repr_key)] is None:
-                                props[uniques.index(repr_key)] = block.get_state().props
-                        else:
-                            f.write(f"({y}, {z}, {x}): {b_name}\n")
-                            if b_name not in uniques:
-                                uniques.append(b_name)
-                                props.append(block.get_state().props)
-                            map[iy, iz, ix] = uniques.index(b_name)
+                    if repr_mode:
+                        repr_key = resolve_repr_key(opt, block, b_name, y, z, x)
+                        map[0, :, iy, iz, ix] = opt.block2repr[repr_key]
+                        if props[uniques.index(repr_key)] is None:
+                            props[uniques.index(repr_key)] = block.get_state().props
+                    else:
+                        if b_name not in uniques:
+                            uniques.append(b_name)
+                            props.append(block.get_state().props)
+                        map[iy, iz, ix] = uniques.index(b_name)
 
     if repr_mode:
         final_map = map
@@ -400,82 +343,16 @@ def save_level_to_world(opt: Config, start_coords, blocks):
                         logger.error(f"  token idx: {token_idx}")
                         logger.error(f"  error: {e}")
 
-def clear_empty_world(worlds_folder, empty_world_name='Curr_Empty_World'):
-    src = os.path.join(worlds_folder, 'Drehmal v2.1 PRIMORDIAL')
-    dst = os.path.join(worlds_folder, empty_world_name)
-    shutil.rmtree(dst)
+def clear_empty_world(
+    input_worlds_dir,
+    input_world_name,
+    output_worlds_dir,
+    output_world_name,
+):
+    """Replace the output world with a fresh copy of the configured template."""
+
+    src = os.path.join(input_worlds_dir, input_world_name)
+    dst = os.path.join(output_worlds_dir, output_world_name)
+    if os.path.exists(dst):
+        shutil.rmtree(dst)
     shutil.copytree(src, dst)
-
-def render_world(render_path: str, opt: Config, num_viewpoints: int = 20):
-    from pytorch3d.io import load_objs_as_meshes, load_obj
-    from pytorch3d.renderer import (look_at_view_transform, FoVPerspectiveCameras, PointLights, Materials,
-                                    RasterizationSettings, MeshRenderer, MeshRasterizer, SoftPhongShader)
-
-    obj = Path(render_path)
-    logger.info("OBJ:", obj)
-    logger.info("MTL:", obj.with_suffix(".mtl"), obj.with_suffix(".mtl").exists())
-
-    # Check texture filenames referenced by MTL exist
-    if obj.with_suffix(".mtl").exists():
-        mtl_txt = obj.with_suffix(".mtl").read_text(errors="ignore").splitlines()
-        tex_lines = [l.strip() for l in mtl_txt if l.strip().lower().startswith("map_kd")]
-        logger.info("map_Kd lines:", tex_lines[:5])
-        for l in tex_lines:
-            tex = l.split(maxsplit=1)[1].strip()
-            tex_path = (obj.parent / tex).resolve()
-            logger.info("tex exists:", tex_path.exists(), "->", tex_path)
-
-    # What load_objs_as_meshes gives you
-    mesh0 = load_objs_as_meshes([render_path], device=opt.device)
-    logger.info("load_objs_as_meshes texture type:", type(mesh0.textures))
-
-    # What load_obj gives you (more detailed)
-    verts, faces, aux = load_obj(render_path, load_textures=True, create_texture_atlas=True)
-    logger.info("aux.texture_images keys:", list(aux.texture_images.keys())[:5])
-    if aux.verts_uvs is not None:
-        uvmin = aux.verts_uvs.min(dim=0).values
-        uvmax = aux.verts_uvs.max(dim=0).values
-        logger.info("UV min:", uvmin, "UV max:", uvmax)
-
-    mesh = load_objs_as_meshes(
-        [render_path],
-        device=opt.device,
-        load_textures=True,
-        create_texture_atlas=True,
-        texture_atlas_size=32,  # try 16 or 32 for Minecraft textures
-    )
-    meshes = mesh.extend(num_viewpoints)
-    lights = PointLights(device=opt.device, location=[[0.0, 0.0, -3.0]])
-
-    elev = torch.full((num_viewpoints,), 20.0, device=opt.device)
-    azim = torch.linspace(-180, 180, num_viewpoints, device=opt.device)
-
-    R, T = look_at_view_transform(dist=3, elev=elev, azim=azim)
-    cameras = FoVPerspectiveCameras(device=opt.device, R=R, T=T)
-    materials = Materials(
-        device=opt.device,
-        shininess=0.0
-    )
-    raster_settings = RasterizationSettings(
-        image_size=512,
-        blur_radius=0.0,
-        faces_per_pixel=1,
-    )
-    renderer = MeshRenderer(
-        rasterizer=MeshRasterizer(
-            cameras=cameras,
-            raster_settings=raster_settings
-        ),
-        shader=SoftPhongShader(
-            device=opt.device,
-            cameras=cameras,
-            lights=lights
-        )
-    )
-
-    # Move the light back in front of the cow which is facing the -z direction.
-    lights.location = torch.tensor([[1.0, 1.0, -3.0]], device=opt.device)
-    images = renderer(meshes, cameras=cameras,
-                      lights=lights, materials=materials)
-    image_grid = to_pil_image(make_grid(torch.permute(images[..., :3], dims=[0, 3, 1, 2]), nrow=math.floor(math.sqrt(num_viewpoints))))
-    return image_grid

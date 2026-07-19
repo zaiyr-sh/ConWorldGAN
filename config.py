@@ -10,9 +10,18 @@ from typing import Any, Optional, Protocol
 
 import torch
 
-from constants import PROJECT_PATH, SUB_COORDS
+from constants import (
+    DEFAULT_INPUT_DIR,
+    DEFAULT_MINEWAYS_EXECUTABLE,
+    DEFAULT_MINEWAYS_SCRIPT_DIR,
+    DEFAULT_OUTPUT_DIR,
+    DEFAULT_REPRESENTATION_DIR,
+    DEFAULT_RUN_DIR,
+    DEFAULT_WINE_EXECUTABLE,
+    SUB_COORDS,
+)
 from region_profiles import DEFAULT_REGION, REGION_PROFILES, RegionBounds
-from utils import get_subdir_path, load_pt, set_seed
+from utils import load_pt, set_seed
 
 
 def _optional_int(value: str) -> Optional[int]:
@@ -73,6 +82,10 @@ class Config(argparse.Namespace):
     input_area_name: str
     output_dir: str
     output_name: str
+    representation_dir: str
+    wine_executable: str
+    mineways_executable: str
+    mineways_script_dir: str
     region: str
     sub_coords: list[int | float]
 
@@ -80,7 +93,6 @@ class Config(argparse.Namespace):
     ker_size: int
     num_layer: int
     scales: list[float]
-    noise_update: float
     niter: int
     lr_g: float
     lr_d: float
@@ -98,7 +110,6 @@ class Config(argparse.Namespace):
     lr_scale: float
     train_depth: int
     norm_layer: str
-    loss: str
     clip_type: str
     neighbors_type: Optional[str]
     semantic_tau: float
@@ -133,7 +144,21 @@ class Config(argparse.Namespace):
         if not self.out_:
             raise RuntimeError("The run output directory has not been initialized")
 
-        keys = set(self._hyperparameter_keys)
+        local_only_keys = {
+            "input_dir",
+            "input_name",
+            "output_dir",
+            "output_name",
+            "representation_dir",
+            "out",
+            "netG",
+            "netD",
+            "wine_executable",
+            "mineways_executable",
+            "mineways_script_dir",
+            "trained_run_dir",
+        }
+        keys = set(self._hyperparameter_keys) - local_only_keys
         keys.update(
             {
                 "coords",
@@ -161,7 +186,7 @@ def build_parser(description: Optional[str] = None) -> argparse.ArgumentParser:
         data,
         "input-dir",
         "--input_dir",
-        default=osp.join(PROJECT_PATH, "minecraft_worlds"),
+        default=DEFAULT_INPUT_DIR,
         help="directory containing input worlds",
     )
     _add_argument(
@@ -182,7 +207,7 @@ def build_parser(description: Optional[str] = None) -> argparse.ArgumentParser:
         data,
         "output-dir",
         "--output_dir",
-        default=get_subdir_path("minecraft_worlds"),
+        default=DEFAULT_OUTPUT_DIR,
         help="directory containing the output world",
     )
     _add_argument(
@@ -213,6 +238,34 @@ def build_parser(description: Optional[str] = None) -> argparse.ArgumentParser:
     paths = parser.add_argument_group("checkpoints and output")
     _add_argument(
         paths,
+        "representation-dir",
+        "--representation_dir",
+        default=DEFAULT_REPRESENTATION_DIR,
+        help="root directory containing per-area representation tables",
+    )
+    _add_argument(
+        paths,
+        "wine-executable",
+        "--wine_executable",
+        default=DEFAULT_WINE_EXECUTABLE,
+        help="Wine executable used to run Mineways",
+    )
+    _add_argument(
+        paths,
+        "mineways-executable",
+        "--mineways_executable",
+        default=DEFAULT_MINEWAYS_EXECUTABLE,
+        help="Mineways executable",
+    )
+    _add_argument(
+        paths,
+        "mineways-script-dir",
+        "--mineways_script_dir",
+        default=DEFAULT_MINEWAYS_SCRIPT_DIR,
+        help="directory used for temporary Mineways scripts",
+    )
+    _add_argument(
+        paths,
         "net-g",
         "--netG",
         "--net_g",
@@ -229,7 +282,7 @@ def build_parser(description: Optional[str] = None) -> argparse.ArgumentParser:
         default="",
         help="discriminator checkpoint used to continue training",
     )
-    _add_argument(paths, "out", default="output", help="experiment output root")
+    _add_argument(paths, "out", default=DEFAULT_RUN_DIR, help="experiment output root")
 
     model = parser.add_argument_group("model")
     _add_argument(
@@ -340,14 +393,6 @@ def build_parser(description: Optional[str] = None) -> argparse.ArgumentParser:
     )
     _add_argument(
         training,
-        "noise-update",
-        "--noise_update",
-        type=float,
-        default=0.1,
-        help="additive noise weight",
-    )
-    _add_argument(
-        training,
         "niter",
         type=int,
         default=None,
@@ -431,7 +476,6 @@ def build_parser(description: Optional[str] = None) -> argparse.ArgumentParser:
         default=1,
         help="number of growing-generator stages to train",
     )
-    _add_argument(training, "loss", default="WGAN-GP", help="adversarial loss name")
     _add_argument(
         training,
         "debug",
@@ -527,7 +571,9 @@ def _load_block_representations(config: Config) -> Optional[dict]:
     if config.repr_type is None:
         return None
 
-    representation_dir = get_subdir_path(f"input/minecraft/{config.input_area_name}")
+    representation_dir = osp.join(
+        config.representation_dir, config.input_area_name
+    )
     if config.repr_type == "bert":
         # filename = f"natural_representations_small_{config.repr_dim}"
         filename = f"natural_representations_small_no_norm_{config.repr_dim}"

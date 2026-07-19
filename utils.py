@@ -3,9 +3,15 @@ import random
 import pickle
 import numpy as np
 import torch
-from torch.nn.functional import interpolate, grid_sample
+from torch.nn.functional import grid_sample
 import subprocess
-from constants import PROJECT_PATH, RELATIVE_OFFSETS_26, WANDB_ENTITY, REPR_TYPES
+from constants import (
+    PROJECT_PATH,
+    RELATIVE_OFFSETS_26,
+    REPR_TYPES,
+    WANDB_ENTITY,
+    WANDB_PROJECT,
+)
 from typing import List, Dict, Tuple
 from loguru import logger
 import sys
@@ -13,7 +19,7 @@ import wandb
 import shutil
 
 def set_seed(seed=0):
-    """ Set the seed for all possible sources of randomness to allow for reproduceability. """
+    """Seed Python, NumPy, and PyTorch for reproducible experiments."""
     torch.manual_seed(seed)
     if torch.cuda.is_available():
         torch.cuda.manual_seed(seed)
@@ -54,38 +60,27 @@ def save_pkl(obj, name, prepath='output/'):
         with open(path_pkl, "wb") as f:
             pickle.dump(obj, f, pickle.HIGHEST_PROTOCOL)
 
-def load_pkl(name, prepath='output/'):
-    with open(prepath + name + '.pkl', 'rb') as f:
-        return pickle.load(f)
-
 def load_pt(name, prepath='output/'):
-    return torch.load(prepath + name + '.pt')
+    return torch.load(os.path.join(prepath, f"{name}.pt"))
 
 def get_subdir_path(name: str = "") -> str:
     return os.path.join(PROJECT_PATH, name) + "/"
 
-def call_wine(on_success, on_failure = None):
-    """
-    Try running Wine. If successful, run on_success().
-    Otherwise, run on_failure().
+def call_wine(wine_executable, on_success, on_failure=None):
+    """Run an action only when the configured Wine executable is available."""
 
-    Args:
-        on_success (callable): Function to run if Wine is available.
-        on_failure (callable): Function to run if Wine is NOT available.
-    """
     try:
-        # Check if Wine is installed and available
-        subprocess.call(["/Applications/Wine Stable.app/Contents/Resources/wine/bin/wine", "--version"])
-
-        # Run the first action
+        subprocess.run(
+            [wine_executable, "--version"],
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
         on_success()
-
-    except OSError:
-        # Fall back if Wine is missing
+    except (OSError, subprocess.CalledProcessError):
         if on_failure is not None:
             on_failure()
-        print("Wine could not be run!")
-        pass
+        logger.warning("Wine could not be run: {}", wine_executable)
 
 def collect_neighbors_for_voxel(
     wrld,                    # PyAnvil World(...)
@@ -149,8 +144,13 @@ def get_tags(opt):
     return [opt.input_name.split(".")[0], str(opt.scales), str(opt.repr_type), opt.input_area_name]
 
 def init_wandb(opt):
-    os.makedirs(get_subdir_path(opt.out), exist_ok=True)
-    run = wandb.init(project="world-gan", entity=WANDB_ENTITY, tags=get_tags(opt), dir=opt.out)
+    os.makedirs(opt.out, exist_ok=True)
+    run = wandb.init(
+        project=WANDB_PROJECT,
+        entity=WANDB_ENTITY,
+        tags=get_tags(opt),
+        dir=opt.out,
+    )
     opt.out_ = run.dir
 
 def make_repr_tensor(opt) -> torch.Tensor:
@@ -177,5 +177,6 @@ def to_one_hot(map: torch.Tensor, uniques: List[str]) -> torch.Tensor:
         oh[0, i] = (map == i)
     return oh
 
-def zip(source_folder, output_zip):
+def archive_directory(source_folder, output_zip):
+    """Create a ZIP archive from an experiment directory."""
     shutil.make_archive(output_zip, 'zip', source_folder)

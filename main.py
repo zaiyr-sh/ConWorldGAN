@@ -4,7 +4,7 @@ from pathlib import Path
 from loguru import logger
 
 from config import parse_args
-from utils import init_logger, init_wandb, zip
+from utils import archive_directory, init_logger, init_wandb
 from generation.generate_samples import generate_samples_cons
 from minecraft.level_utils import read_map
 from training.train import train
@@ -36,12 +36,8 @@ def main():
     except Exception as e:
         logger.error(f"Failed to generate samples: {e}")
 
-    # try:
-    #     make_block_histogram(os.path.join(opt.out_, "random_samples/torch_blockdata"), True)
-    # except Exception as e: logger.error(f"Failed to make block histogram: {e}")
-
     clean_path = Path(opt.out_).parent.as_posix()
-    zip(clean_path, clean_path)
+    archive_directory(clean_path, clean_path)
 
 
 if __name__ == "__main__":

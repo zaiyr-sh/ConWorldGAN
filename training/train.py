@@ -53,7 +53,7 @@ def render_real_pyramid(reals, opt: Config):
         curr_coords = [[pos, pos + dy], [0, dz], [0, dx]]
 
         obj_name = f"real@scale{scale_idx}"
-        obj_path = render_minecraft(worldname, curr_coords, obj_pth, obj_name)
+        obj_path = render_minecraft(worldname, curr_coords, obj_pth, obj_name, opt)
         wandb.log({obj_name: wandb.Object3D(open(obj_path))}, commit=False)
 
         pos_offset += dy + 5
@@ -135,9 +135,10 @@ def train(real, opt: Config):
         print(i, tuple(r.shape))
 
     # Log the original input level(s) as an image
-    call_wine(on_success=lambda: render_real_pyramid(reals, opt))
-    os.makedirs("%s/state_dicts" % (opt.out_), exist_ok=True)
-
+    call_wine(
+        opt.wine_executable,
+        on_success=lambda: render_real_pyramid(reals, opt),
+    )
     opt.repr_channels = real.shape[1]
     netG = init_G(opt)
 

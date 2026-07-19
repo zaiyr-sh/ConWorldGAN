@@ -1,5 +1,10 @@
 wandb/
 venv/
+.venv/
+.DS_Store
+.env
+.env.*
+!.env.example
 .idea/
 output/
 output_village_small/
@@ -32,5 +37,12 @@ dropbox
 !/ablation/*/runs.txt
 /minecraft/mineways/*
 !minecraft/mineways/Readme.md
+/minecraft/Mineways.exe
+/minecraft_worlds/*
+!/minecraft_worlds/blocks/
+!/minecraft_worlds/blocks/**
+/blocks.txt
+*.pt
+*.pth
 /input/minecraft/drehmal/
 /input/minecraft/Empty_World/

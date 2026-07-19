@@ -1,5 +1,5 @@
 import os
-from typing import Dict, List
+from typing import List
 
 import matplotlib.pyplot as plt
 from matplotlib.colors import ListedColormap, BoundaryNorm
@@ -23,16 +23,6 @@ LAYOUT_FILE_NAMES = [
     "foliage",
     "decor",
 ]
-
-# Paper-friendly semantic colors. Feel free to adjust hex values.
-CHANNEL_COLORS: Dict[str, str] = {
-    "Structure footprint": "#8c564b",
-    "Ground surface": "#7f7f7f",
-    "Water / liquid": "#1f77b4",
-    "Vegetation": "#2ca02c",
-    "Decorative blocks": "#f5830a",
-}
-
 
 def _prepare_topdown_image(img: np.ndarray, flip_x: bool = True, flip_z: bool = False) -> np.ndarray:
     """

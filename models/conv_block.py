@@ -6,7 +6,6 @@ class ConvBlock(nn.Sequential):
     def __init__(self, in_channel, out_channel, ker_size, padd=0, stride=1, activation="lrelu", norm_type="instance"):
         super().__init__()
         self.add_module("conv", nn.Conv3d(in_channels=in_channel, out_channels=out_channel, kernel_size=ker_size, stride=stride, padding=padd))
-        # self.add_module("noise", NoiseInjection(out_channel))
         self.add_module(*get_norm_layer(out_channel, norm_type))
         self.add_module(*get_activation(activation))
 
@@ -34,12 +33,3 @@ def upsample(x: torch.Tensor, size, mode: str = "trilinear") -> torch.Tensor:
     if mode == "nearest":
         return F.interpolate(x, size=size, mode="nearest")
     return F.interpolate(x, size=size, mode=mode, align_corners=True)
-
-class NoiseInjection(nn.Module):
-    def __init__(self, channels):
-        super().__init__()
-        self.weight = nn.Parameter(torch.zeros(1, channels, 1, 1, 1))
-
-    def forward(self, x):
-        noise = torch.randn_like(x)
-        return x + self.weight * noise

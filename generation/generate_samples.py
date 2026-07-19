@@ -1,6 +1,5 @@
 import math
 import os
-import subprocess
 from collections.abc import Sequence
 
 import numpy as np
@@ -234,7 +233,9 @@ def generate_samples_cons(
                 [base_y, base_y + real_level.shape[1]],
                 [base_z, base_z + real_level.shape[2]],
             ]
-            render_minecraft(opt.output_name, curr_coords, real_pth, "real_last_scale")
+            render_minecraft(
+                opt.output_name, curr_coords, real_pth, "real_last_scale", opt
+            )
         except Exception as e:
             print("Render REAL failed:", repr(e))
 
@@ -259,13 +260,6 @@ def generate_samples_cons(
             obj_pth = os.path.join(dir2save, "objects", "last")
             os.makedirs(obj_pth, exist_ok=True)
             try:
-                subprocess.call(
-                    [
-                        "/Applications/Wine Stable.app/Contents/Resources/wine/bin/wine",
-                        "--version",
-                    ]
-                )
-
                 len_n = math.ceil(math.sqrt(num_samples))
                 xg, zg = np.unravel_index(n, [len_n, len_n])
                 base_x = opt.coords[0][0]
@@ -281,7 +275,7 @@ def generate_samples_cons(
                     [base_y, base_y + level.shape[1]],
                     [posz, posz + level.shape[2]],
                 ]
-                render_minecraft(opt.output_name, curr_coords, obj_pth, f"{n}")
+                render_minecraft(opt.output_name, curr_coords, obj_pth, f"{n}", opt)
             except Exception as e:
                 print("Render failed:", repr(e))
 
@@ -298,7 +292,12 @@ if __name__ == "__main__":
 
     opt = parse_generate_samples_args()
 
-    clear_empty_world(opt.output_dir, opt.output_name)
+    clear_empty_world(
+        opt.input_dir,
+        opt.input_name,
+        opt.output_dir,
+        opt.output_name,
+    )
 
     # Read level according to input arguments
     real = mc_read_level(opt)
@@ -306,7 +305,7 @@ if __name__ == "__main__":
     opt.map_shape = real.shape[2:]
 
     # Load Generator
-    netG, fixed_noise, reals, noise_amp, last_depth = load_trained_pyramid_cons(opt)
+    netG, fixed_noise, reals, noise_amp, _ = load_trained_pyramid_cons(opt)
 
     prefix = "arbitrary"
 

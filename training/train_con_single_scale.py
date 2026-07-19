@@ -16,7 +16,7 @@ from minecraft.level_utils import (
     save_level_to_world,
     repr_to_semantic_map,
 )
-from models import calc_gradient_penalty, save_networks
+from models import calc_gradient_penalty
 
 
 def set_requires_grad(net, flag: bool):
@@ -397,19 +397,13 @@ def train_single_scale(
                         [0, real_scaled.shape[2]],
                     ]
 
-                    render_pth = render_minecraft(
+                    render_minecraft(
                         opt.output_name,
                         curr_coords,
                         obj_pth,
                         render_names[n],
+                        opt,
                     )
-
-                    # rendered_images = render_world(render_pth, opt)
-                    # wandb.log(
-                    #     {render_names[n]: wandb.Image(rendered_images)},
-                    #     step=step,
-                    #     commit=False,
-                    # )
 
             except Exception as e:
                 logger.warning(f"Render failed at scale={depth}, it={it}: {e}")
@@ -418,7 +412,7 @@ def train_single_scale(
     torch.save(fixed_noise, os.path.join(opt.outf, "fixed_noise.pth"))
     torch.save(noise_amp, os.path.join(opt.outf, "noise_amp.pth"))
 
-    save_networks(G, D, fixed_noise[-1], opt)
+    torch.save(fixed_noise[-1], os.path.join(opt.outf, "z_opt.pth"))
 
     if D_layout is not None:
         torch.save(
